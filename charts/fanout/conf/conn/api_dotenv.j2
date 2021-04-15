@@ -1,8 +1,0 @@
-DJANGO_SECRET_KEY={{ get_env(name='DJANGO_SECRET_KEY') }}
-DJANGO_DEBUG={{ get_env(name='DJANGO_DEBUG', default='0') }}
-{% if 'redis' in services -%}
-REDIS_NODES={% for host, endpoint in services['redis'] %}{{ endpoint.ip_address }}{% if not loop.last %},{% endif %}{% endfor %}
-{% endif -%}
-STATS_SPEC=ipc:///mnt/tmp/statstracker-in
-MESSAGE_BLOCK_SIZE=65536
-REALMS_FILE=/etc/fc/realms

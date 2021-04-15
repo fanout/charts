@@ -1,0 +1,14 @@
+apiVersion: v1
+entries:
+  fanout:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2021-04-14T17:30:31.404213282-07:00"
+    description: Push platform for APIs
+    digest: 02f82d7b0ea97af3d2a8eca8fb7309a3af38e79e23d93eca09016c33d6233102
+    name: fanout
+    type: application
+    urls:
+    - https://github.com/fanout/charts/releases/download/fanout-1.0.0/fanout-1.0.0.tgz
+    version: 1.0.0
+generated: "2021-04-14T17:30:31.40331412-07:00"

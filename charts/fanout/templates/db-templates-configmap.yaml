@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "fanout-platform.fullname" . }}-db-templates
-  labels:
-    {{- include "fanout-platform.labels" . | nindent 4 }}
-data:
-{{ (.Files.Glob "conf/db/*").AsConfig | indent 2 }}
