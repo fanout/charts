@@ -1,0 +1,146 @@
+{{- range $i, $e := until (int .Values.brokerCount) }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}
+  labels:
+    {{- include "fanout-platform.labels" $ | nindent 4 }}
+    app: broker-{{ $e }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fanout-platform.selectorLabels" $ | nindent 6 }}
+      app: broker-{{ $e }}
+  serviceName: {{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}
+  template:
+    metadata:
+      labels:
+        {{- include "fanout-platform.labels" $ | nindent 8 }}
+        app: broker-{{ $e }}
+    spec:
+      imagePullSecrets:
+      - name: fanout-regcred
+      initContainers:
+      - name: init-conf
+        image: fanout/fc-conftool:0.0.3
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: LOGICAL_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" $ }}-cluster
+              key: logical_region
+        - name: REGION_BASE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" $ }}-cluster
+              key: region_base
+        command: ["/usr/local/bin/fc-conftool"]
+        args:
+        - --template=/mnt/templates/broker.conf.j2:/etc/fc/broker.conf
+        volumeMounts:
+        - name: templates
+          mountPath: /mnt/templates
+          readOnly: true
+        - name: conf
+          mountPath: /etc/fc
+      containers:
+      - name: broker
+        image: fanout/fc-broker:0.0.3
+        env:
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" $ }}-cluster
+              key: debug
+        ports:
+        - containerPort: 5360
+        - containerPort: 5361
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/fc
+        - name: certs
+          mountPath: /etc/fc/broker-certs
+          readOnly: true
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        livenessProbe:
+          exec:
+            command: ["python", "checkbroker.py", "--certsdir", "/etc/fc/broker-certs"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "2000Mi"
+            cpu: "1600m"
+      - name: localbroker
+        image: fanout/fc-broker:0.0.3
+        command: ["python", "localbroker.py"]
+        args:
+        - --bindaddr=*
+        ports:
+        - containerPort: 9500
+        - containerPort: 9501
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "50Mi"
+            cpu: "50m"
+      - name: conf
+        image: fanout/fc-conftool:0.0.3
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: LOGICAL_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" $ }}-cluster
+              key: logical_region
+        - name: REGION_BASE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" $ }}-cluster
+              key: region_base
+        command: ["/usr/local/bin/fc-conftool"]
+        args:
+        - --service=broker
+        - --template=/mnt/templates/broker.conf.j2:/etc/fc/broker.conf:broker
+        - --process=fc-broker:broker
+        - --interval=5
+        securityContext:
+          capabilities:
+            add:
+            - SYS_PTRACE
+        volumeMounts:
+        - name: templates
+          mountPath: /mnt/templates
+          readOnly: true
+        - name: conf
+          mountPath: /etc/fc
+        resources:
+          requests:
+            memory: "50Mi"
+            cpu: "50m"
+      volumes:
+      - name: conf
+        emptyDir: {}
+      - name: templates
+        configMap:
+          name: {{ include "fanout-platform.fullname" $ }}-broker-templates
+      - name: certs
+        secret:
+          secretName: {{ include "fanout-platform.fullname" $ }}-broker-certs
+---
+{{- end }}

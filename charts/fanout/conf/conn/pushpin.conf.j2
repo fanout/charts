@@ -1,0 +1,145 @@
+[global]
+include={libdir}/internal.conf
+
+# directory to save runtime files
+rundir=/mnt/tmp
+
+# prefix for zmq ipc specs
+ipc_prefix=pushpin-
+
+# port offset for zmq tcp specs and http control server
+port_offset=0
+
+# TTL (seconds) for connection stats
+stats_connection_ttl=240
+
+
+[runner]
+# services to start
+services=mongrel2,m2adapter,zurl,pushpin-proxy,pushpin-handler
+
+# plain HTTP port that mongrel2 should listen on
+http_port=7999
+
+# list of HTTPS ports that mongrel2 should listen on (you must have certs set)
+#https_ports=443
+
+# directory to save log files
+logdir=/var/log/pushpin
+
+# logging level. 2 = info, >2 = verbose
+log_level=2
+
+# paths
+mongrel2_bin=mongrel2
+m2sh_bin=m2sh
+zurl_bin=zurl
+
+
+[proxy]
+# list of connect PULL for receiving mongrel2 HTTP requests
+m2a_in_specs=ipc:///mnt/tmp/condure-out
+
+# list of connect DEALER for continuing mongrel2 HTTP requests
+m2a_in_stream_specs=ipc:///mnt/tmp/condure-out-stream
+
+# list of connect PUB for sending mongrel2 HTTP responses
+m2a_out_specs=ipc:///mnt/tmp/condure-in
+
+# list of connect PUSH for sending zurl HTTP requests
+zurl_out_specs=ipc:///mnt/tmp/zurl-in
+
+# list of connect ROUTER for continuing zurl HTTP requests
+zurl_out_stream_specs=ipc:///mnt/tmp/zurl-in-stream
+
+# list of connect SUB for receiving zurl HTTP responses
+zurl_in_specs=ipc:///mnt/tmp/zurl-out
+
+# routes config file (path relative to location of this file)
+routesfile=routes
+
+# enable debug mode to get informative error responses
+debug=false
+
+# whether to use automatic CORS and JSON-P wrapping
+auto_cross_origin=false
+
+# whether to accept x-forwarded-proto
+accept_x_forwarded_protocol=true
+
+# whether to assert x-forwarded-proto
+set_x_forwarded_protocol=proto-only
+
+# how to treat x-forwarded-for. example: "truncate:0,append"
+x_forwarded_for=
+
+# how to treat x-forwarded-for if grip-signed
+x_forwarded_for_trusted=
+
+# the following headers must be marked in order to qualify as orig
+orig_headers_need_mark=Connection,X-Forwarded-For
+
+# for signing requests proxied by pushpin. use "base64:" prefix for binary key
+sig_key=changeme
+
+# use this to allow grip to be forwarded upstream (e.g. to fanout.io)
+upstream_key=
+
+# for the sockjs iframe transport
+sockjs_url=http://cdn.jsdelivr.net/sockjs/0.3.4/sockjs.min.js
+
+# updates check has three modes:
+#   report: check for new pushpin version and report anonymous usage info to
+#           the pushpin developers
+#   check:  check for new pushpin version only, don't report anything
+#   off:    don't do any reporting or checking
+# pushpin will output a log message when a new version is available. report
+# mode helps the pushpin project build credibility, so please enable it if you
+# enjoy this software :)
+updates_check=report
+
+# use this field to identify your organization in updates requests. if left
+# blank, updates requests will be anonymous
+organization_name={{ get_env(name='ORGANIZATION_NAME', default='') }}
+
+
+[handler]
+# ipc permissions (octal)
+#ipc_file_mode=777
+
+# list of connect DEALER for continuing mongrel2 HTTP requests
+m2a_in_stream_specs=ipc:///mnt/tmp/condure-out-stream
+
+# list of connect PUB for sending mongrel2 HTTP responses
+m2a_out_specs=ipc:///mnt/tmp/condure-in
+
+# bind PULL for receiving publish commands
+push_in_spec=tcp://0.0.0.0:5560
+
+# bind SUB for receiving published messages
+push_in_sub_spec=tcp://0.0.0.0:5562
+
+# addr/port to listen on for receiving publish commands via HTTP
+push_in_http_addr=0.0.0.0
+push_in_http_port=5561
+
+# bind PUB for sending stats (metrics, subscription info, etc)
+stats_spec=ipc:///mnt/tmp/pushpin-stats
+
+# bind REP for responding to commands
+command_spec=ipc:///mnt/tmp/pushpin-command
+
+# max messages per second
+message_rate={{ get_env(name='MESSAGE_RATE', default='1250')|int }}
+
+# max rate-limited messages
+message_hwm=12500
+
+# bind DEALER for making state requests
+state_spec=ipc:///mnt/tmp/pushpin-state
+
+# set to report blocks counts in stats (content size / block size)
+message_block_size=65536
+
+# TTL (seconds) for subscription stats
+stats_subscription_ttl=300

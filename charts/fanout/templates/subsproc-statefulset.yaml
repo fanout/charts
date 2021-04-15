@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fanout-platform.fullname" . }}-subsproc
+  labels:
+    {{- include "fanout-platform.labels" . | nindent 4 }}
+    app: subsproc
+spec:
+  selector:
+    matchLabels:
+      {{- include "fanout-platform.selectorLabels" . | nindent 6 }}
+      app: subsproc
+  serviceName: subsproc
+  template:
+    metadata:
+      labels:
+        {{- include "fanout-platform.labels" . | nindent 8 }}
+        app: subsproc
+    spec:
+      shareProcessNamespace: true
+      imagePullSecrets:
+      - name: fanout-regcred
+      initContainers:
+      - name: init-conf
+        image: fanout/fc-conftool:0.0.3
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: LOGICAL_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: logical_region
+        command: ["/usr/local/bin/fc-conftool"]
+        args:
+        {{- range $i, $e := until (int .Values.brokerCount) }}
+        - --srv-domain=_broker-internal-in._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        - --srv-domain=_broker-internal-out._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        {{- end }}
+        - --srv-domain=_redis._tcp.{{ include "fanout-platform.fullname" . }}-db.default.svc.cluster.local
+        - --srv-domain=_subsaggregator-internal-in._tcp.{{ include "fanout-platform.fullname" . }}-subsproc.default.svc.cluster.local
+        - --template=/mnt/templates/subsaggregator.conf.j2:/etc/fc/subsaggregator.conf
+        volumeMounts:
+        - name: templates
+          mountPath: /mnt/templates
+          readOnly: true
+        - name: conf
+          mountPath: /etc/fc
+      containers:
+      - name: subsaggregator
+        image: fanout/fc-subsaggregator:0.0.4
+        env:
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: debug
+        command: ["sh", "-c"]
+        args:
+        - |
+          cmd="python subsaggregator.py --configfile /etc/fc/subsaggregator.conf --pidfile /mnt/tmp/subsaggregator.pid"
+          if [ "$DEBUG" = "1" ]; then exec $cmd --verbose ; else exec $cmd ; fi
+        ports:
+        - containerPort: 5380
+        - containerPort: 5381
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/fc
+          readOnly: true
+        - name: tmp
+          mountPath: /mnt/tmp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "2600Mi"
+            cpu: "1150m"
+      - name: conf
+        image: fanout/fc-conftool:0.0.3
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: LOGICAL_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: logical_region
+        command: ["/usr/local/bin/fc-conftool"]
+        args:
+        {{- range $i, $e := until (int .Values.brokerCount) }}
+        - --srv-domain=_broker-internal-in._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        - --srv-domain=_broker-internal-out._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        {{- end }}
+        - --srv-domain=_redis._tcp.{{ include "fanout-platform.fullname" . }}-db.default.svc.cluster.local
+        - --srv-domain=_subsaggregator-internal-in._tcp.{{ include "fanout-platform.fullname" . }}-subsproc.default.svc.cluster.local
+        - --service=subsaggregator
+        - --template=/mnt/templates/subsaggregator.conf.j2:/etc/fc/subsaggregator.conf:subsaggregator
+        - --pidfile=/mnt/tmp/subsaggregator.pid:subsaggregator
+        - --interval=5
+        securityContext:
+          capabilities:
+            add:
+            - SYS_PTRACE
+        volumeMounts:
+        - name: templates
+          mountPath: /mnt/templates
+          readOnly: true
+        - name: conf
+          mountPath: /etc/fc
+        - name: tmp
+          mountPath: /mnt/tmp
+        resources:
+          requests:
+            memory: "50Mi"
+            cpu: "50m"
+      volumes:
+      - name: templates
+        configMap:
+          name: {{ include "fanout-platform.fullname" . }}-subsproc-templates
+      - name: tmp
+        emptyDir: {}
+      - name: conf
+        emptyDir: {}

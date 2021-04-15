@@ -1,0 +1,13 @@
+[broker]
+name={{ get_env(name='POD_NAME')|split(pat='.')|nth(n=0)|split(pat='-')|slice(end=-1)|join(sep='-') }}.{{ get_env(name='LOGICAL_REGION') }}
+internal_in_specs=tcp://0.0.0.0:5360
+internal_out_specs=tcp://0.0.0.0:5361
+external_in_specs=tcp://0.0.0.0:9501
+external_out_specs=tcp://*:5369
+keepalive_ttl=5000
+region_domain={{ get_env(name='LOGICAL_REGION') }}.region.{{ get_env(name='REGION_BASE') }}
+region_discovery_domain={{ get_env(name='REGION_BASE') }}
+curve_server_cert=broker-certs/server.key_secret
+curve_server_peer_certs_dir=broker-certs
+curve_client_cert=broker-certs/client.key_secret
+curve_client_peer_cert=broker-certs/server.key

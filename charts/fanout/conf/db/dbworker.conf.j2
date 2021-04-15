@@ -1,0 +1,10 @@
+[dbworker]
+{% if 'redis' in services -%}
+edgedb_nodes={% for host, endpoint in services['redis'] %}{{ endpoint.ip_address }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif -%}
+pub_bind_specs=tcp://*:9017
+{% if 'broker-internal-in' in services and 'broker-internal-out' in services -%}
+pub_connect_targets="{% for host, endpoint in services['broker-internal-in'] %}{{ host }};tcp://{{ endpoint.ip_address }}:{{ endpoint.port }};tcp://{{ services['broker-internal-out'][host].ip_address }}:{{ services['broker-internal-out'][host].port }}{% if not loop.last %},{% endif %}{% endfor %}"
+{% endif -%}
+pub_redundancy=2
+pubsub_domain=localhost

@@ -1,0 +1,15 @@
+[adapter]
+{% if 'broker-internal-out' in services -%}
+sub_connect_targets="{% for host, endpoint in services['broker-internal-out'] %}{{ host }};tcp://{{ endpoint.ip_address }}:{{ endpoint.port }}{% if not loop.last %},{% endif %}{% endfor %}"
+{% endif -%}
+pushpin_out_specs=tcp://127.0.0.1:5562
+dmserver_out_specs=ipc:///mnt/tmp/dmhandler-push-in
+dmserver_wssid_specs=ipc:///mnt/tmp/dmhandler-wssid
+dmserver_event_out_specs=ipc:///mnt/tmp/dmhandler-event-in
+stats_redis_addr=127.0.0.1:6379
+stats_in_specs=ipc:///mnt/tmp/statstracker-in
+pushpin_stats_specs=ipc:///mnt/tmp/pushpin-stats
+{% if 'subsaggregator-internal-in' in services and 'subsaggregator-internal-out' in services -%}
+subs_pub_connect_targets="{% for host, endpoint in services['subsaggregator-internal-in'] %}{{ host }};tcp://{{ endpoint.ip_address }}:{{ endpoint.port }};tcp://{{ services['subsaggregator-internal-out'][host].ip_address }}:{{ services['subsaggregator-internal-out'][host].port }}{% if not loop.last %},{% endif %}{% endfor %}"
+{% endif -%}
+subs_pub_redundancy=2

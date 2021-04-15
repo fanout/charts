@@ -1,0 +1,317 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fanout-platform.fullname" . }}-conn
+  labels:
+    {{- include "fanout-platform.labels" . | nindent 4 }}
+    app: conn
+spec:
+  selector:
+    matchLabels:
+      {{- include "fanout-platform.selectorLabels" . | nindent 6 }}
+      app: conn
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        {{- include "fanout-platform.labels" . | nindent 8 }}
+        app: conn
+    spec:
+      shareProcessNamespace: true
+      imagePullSecrets:
+      - name: fanout-regcred
+      initContainers:
+      - name: init-conf
+        image: fanout/fc-conftool:0.0.3
+        env:
+        - name: ORGANIZATION_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: organization_name
+        - name: LOGICAL_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: logical_region
+        - name: REGION_BASE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: region_base
+        - name: DJANGO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: api_django_secret
+        - name: DJANGO_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: debug
+        command: ["/usr/local/bin/fc-conftool"]
+        args:
+        {{- range $i, $e := until (int .Values.brokerCount) }}
+        - --srv-domain=_broker-internal-in._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        - --srv-domain=_broker-internal-out._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        {{- end }}
+        - --srv-domain=_redis._tcp.{{ include "fanout-platform.fullname" . }}-db.default.svc.cluster.local
+        - --srv-domain=_subsaggregator-internal-in._tcp.{{ include "fanout-platform.fullname" . }}-subsproc.default.svc.cluster.local
+        - --srv-domain=_subsaggregator-internal-out._tcp.{{ include "fanout-platform.fullname" . }}-subsproc.default.svc.cluster.local
+        - --template=/mnt/templates/zurl.conf.j2:/etc/zurl/zurl.conf
+        - --template=/mnt/templates/pushpin.conf.j2:/etc/pushpin/pushpin.conf
+        - --template=/mnt/files/routes:/etc/pushpin/routes
+        - --template=/mnt/templates/adapter.conf.j2:/etc/fc/adapter.conf
+        - --template=/mnt/templates/api_dotenv.j2:/etc/fc/api.env
+        - --template=/mnt/files/realms:/etc/fc/realms
+        - --template=/mnt/templates/nginx.conf:/etc/nginx/nginx.conf
+        volumeMounts:
+        - name: templates
+          mountPath: /mnt/templates
+          readOnly: true
+        - name: files
+          mountPath: /mnt/files
+          readOnly: true
+        - name: zurl-conf
+          mountPath: /etc/zurl
+        - name: pushpin-conf
+          mountPath: /etc/pushpin
+        - name: conf
+          mountPath: /etc/fc
+        - name: nginx-conf
+          mountPath: /etc/nginx
+      containers:
+      - name: condure
+        image: fanout/fc-pushpin:8a3c762e
+        ports:
+        - containerPort: 9001
+        volumeMounts:
+        - name: tmp
+          mountPath: /mnt/tmp
+        command: ["/usr/bin/condure"]
+        args:
+        - --listen=9001,stream
+        - --zclient-stream=ipc:///mnt/tmp/condure
+        - --stream-maxconn=25000
+        - --log-level=2
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "400Mi"
+            cpu: "200m"
+      - name: zurl
+        image: fanout/fc-pushpin:8a3c762e
+        volumeMounts:
+        - name: zurl-conf
+          mountPath: /etc/zurl
+          readOnly: true
+        - name: tmp
+          mountPath: /mnt/tmp
+        command: ["/usr/bin/zurl"]
+        args:
+        - --config=/etc/zurl/zurl.conf
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "400Mi"
+            cpu: "200m"
+      - name: pushpin-proxy
+        image: fanout/fc-pushpin:8a3c762e
+        volumeMounts:
+        - name: pushpin-conf
+          mountPath: /etc/pushpin
+          readOnly: true
+        - name: tmp
+          mountPath: /mnt/tmp
+        command: ["/usr/bin/pushpin-proxy"]
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "800Mi"
+            cpu: "600m"
+      - name: pushpin-handler
+        image: fanout/fc-pushpin:8a3c762e
+        ports:
+        - containerPort: 5560
+        volumeMounts:
+        - name: pushpin-conf
+          mountPath: /etc/pushpin
+          readOnly: true
+        - name: tmp
+          mountPath: /mnt/tmp
+        command: ["/usr/bin/pushpin-handler"]
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "800Mi"
+            cpu: "600m"
+      - name: redis
+        image: redis:6.0
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "100Mi"
+            cpu: "100m"
+      - name: adapter
+        image: fanout/fc-adapter:0.0.10
+        env:
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: debug
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/fc
+          readOnly: true
+        - name: tmp
+          mountPath: /mnt/tmp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "100Mi"
+            cpu: "200m"
+      - name: api
+        image: fanout/fc-api:0.0.5
+        command: ['gunicorn', '-w', '9', '--pid', '/mnt/tmp/api.pid', '--bind', '0.0.0.0:8007', 'server.wsgi']
+        ports:
+        - containerPort: 8007
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/fc
+          readOnly: true
+        - name: tmp
+          mountPath: /mnt/tmp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "500Mi"
+            cpu: "100m"
+      - name: nginx
+        image: nginx:1.18.0
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /etc/nginx
+          readOnly: true
+        lifecycle:
+          preStop:
+            exec:
+              command: ["sleep", "15"]
+        resources:
+          requests:
+            memory: "100Mi"
+            cpu: "100m"
+      - name: conf
+        image: fanout/fc-conftool:0.0.3
+        env:
+        - name: ORGANIZATION_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: organization_name
+        - name: LOGICAL_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: logical_region
+        - name: REGION_BASE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: region_base
+        - name: DJANGO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: api_django_secret
+        - name: DJANGO_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "fanout-platform.fullname" . }}-cluster
+              key: debug
+        command: ["/usr/local/bin/fc-conftool"]
+        args:
+        {{- range $i, $e := until (int .Values.brokerCount) }}
+        - --srv-domain=_broker-internal-in._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        - --srv-domain=_broker-internal-out._tcp.{{ include "fanout-platform.fullname" $ }}-broker-{{ $e }}.default.svc.cluster.local,trimlast
+        {{- end }}
+        - --srv-domain=_redis._tcp.{{ include "fanout-platform.fullname" . }}-db.default.svc.cluster.local
+        - --srv-domain=_subsaggregator-internal-in._tcp.{{ include "fanout-platform.fullname" . }}-subsproc.default.svc.cluster.local
+        - --srv-domain=_subsaggregator-internal-out._tcp.{{ include "fanout-platform.fullname" . }}-subsproc.default.svc.cluster.local
+        - --service=zurl
+        - --service=pushpin-proxy
+        - --service=pushpin-handler
+        - --service=adapter
+        - --service=api
+        - --template=/mnt/templates/zurl.conf.j2:/etc/zurl/zurl.conf:zurl
+        - --template=/mnt/templates/pushpin.conf.j2:/etc/pushpin/pushpin.conf:pushpin-proxy,pushpin-handler
+        - --template=/mnt/files/routes:/etc/pushpin/routes
+        - --template=/mnt/templates/adapter.conf.j2:/etc/fc/adapter.conf:adapter
+        - --template=/mnt/templates/api_dotenv.j2:/etc/fc/api.env:api
+        - --template=/mnt/files/realms:/etc/fc/realms
+        - --process=zurl:zurl
+        - --process=pushpin-proxy:pushpin-proxy
+        - --process=pushpin-handler:pushpin-handler
+        - --process=fc-adapter:adapter
+        - --pidfile=/mnt/tmp/api.pid:api
+        - --interval=5
+        volumeMounts:
+        - name: templates
+          mountPath: /mnt/templates
+          readOnly: true
+        - name: files
+          mountPath: /mnt/files
+          readOnly: true
+        - name: zurl-conf
+          mountPath: /etc/zurl
+        - name: pushpin-conf
+          mountPath: /etc/pushpin
+        - name: conf
+          mountPath: /etc/fc
+        - name: nginx-conf
+          mountPath: /etc/nginx
+        - name: tmp
+          mountPath: /mnt/tmp
+        resources:
+          requests:
+            memory: "50Mi"
+            cpu: "50m"
+      volumes:
+      - name: templates
+        configMap:
+          name: {{ include "fanout-platform.fullname" . }}-conn-templates
+      - name: files
+        configMap:
+          name: {{ include "fanout-platform.fullname" . }}-conn-files
+      - name: tmp
+        emptyDir: {}
+      - name: zurl-conf
+        emptyDir: {}
+      - name: pushpin-conf
+        emptyDir: {}
+      - name: conf
+        emptyDir: {}
+      - name: nginx-conf
+        emptyDir: {}

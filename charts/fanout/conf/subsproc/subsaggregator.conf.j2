@@ -1,0 +1,22 @@
+[global]
+name={{ get_env(name='POD_NAME') }}
+region={{ get_env(name='LOGICAL_REGION') }}
+internal_in_specs=tcp://*:5380
+internal_out_specs=tcp://*:5381
+{% if 'broker-internal-out' in services -%}
+external_in_targets={% for host, endpoint in services['broker-internal-out'] %}{{ host }};tcp://{{ endpoint.ip_address }}:{{ endpoint.port }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif -%}
+{% if 'broker-internal-in' in services and 'broker-internal-out' in services -%}
+external_out_targets={% for host, endpoint in services['broker-internal-in'] %}{% if host in services['broker-internal-out'] %}{{ host }};tcp://{{ endpoint.ip_address }}:{{ endpoint.port }};tcp://{{ services['broker-internal-out'][host].ip_address }}:{{ services['broker-internal-out'][host].port }}{% if not loop.last %},{% endif %}{% endif %}{% endfor %}
+{% endif -%}
+stats_specs=ipc:///tmp/subsaggregator-stats
+keepalive_ttl=10000
+redundancy=2
+out_ttl=300
+db_threads=4
+{% if 'subsaggregator-internal-in' in services -%}
+edgeproc_nodes={% for host, _ in services['subsaggregator-internal-in'] %}{{ host }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif -%}
+{% if 'redis' in services -%}
+edgedb_nodes={% for host, endpoint in services['redis'] %}{{ endpoint.ip_address }}{% if not loop.last %},{% endif %}{% endfor %}
+{% endif -%}
