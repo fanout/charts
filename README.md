@@ -1,6 +1,6 @@
 # Fanout Platform Helm Charts
 
-This is the official Helm Charts repository for installing Fanout Platform on Kubernetes. Note that the charts depend on private Docker images. Use the contact form at [Fanout Platform](https://fanout.io/enterprise/) to get access before using the charts.
+This is the official Helm Charts repository for installing Fanout Platform on Kubernetes. Note that the charts depend on private Docker images. Please use the [contact form](https://fanout.io/enterprise/) to get access first.
 
 ## Install
 
